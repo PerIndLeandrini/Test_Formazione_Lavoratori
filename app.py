@@ -194,8 +194,7 @@ if not st.session_state.test_avviato:
             "📧 Email a cui inviare il report (può essere multipla, separata da virgole)",
             placeholder="es. mario.rossi@email.com, rspp@azienda.it",
         )
-        invia_copia_me = st.checkbox("✅ Invia copia anche a Simone Leandrini")
-
+        
         accetto = st.checkbox("✅ Dichiaro di accettare il trattamento dei dati ai fini formativi (privacy)")
         avvia = st.form_submit_button("Inizia il test")
 
@@ -208,8 +207,7 @@ if not st.session_state.test_avviato:
                 st.session_state.cf = cf.upper()
                 st.session_state.azienda = azienda
                 st.session_state.email_dest = [email.strip() for email in mail_partecipante.split(",") if email.strip()]
-                if invia_copia_me:
-                    st.session_state.email_dest.append("perindleandrini@4step.it")
+                st.session_state.email_dest.append("perindleandrini@4step.it")
 
 # ------------------------------------------------------------
 # EROGAZIONE TEST (TUTTE LE SEZIONI IN SEQUENZA)
@@ -368,3 +366,4 @@ if st.session_state.test_avviato:
                     st.warning(f"❌ Errore nell'invio email a {destinatario}: {e}")
         else:
             st.info("✉️ Email non inviata: configura le credenziali in .streamlit/secrets.toml o nessun destinatario.")
+
