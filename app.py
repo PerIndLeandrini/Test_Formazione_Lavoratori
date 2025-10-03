@@ -4,7 +4,6 @@ import os
 from datetime import datetime as dt
 from math import ceil
 from zoneinfo import ZoneInfo
-from domande import MODULI
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -181,7 +180,7 @@ MODULI = {
 }
 
 # ------------------------------------------------------------
-# FORM DATI PARTECIPANTE + SCELTA MODULO
+# FORM DATI PARTECIPANTE (TEST UNICO – tutte le sezioni in sequenza)
 # ------------------------------------------------------------
 if not st.session_state.test_avviato:
     with st.form("dati_partecipante"):
@@ -189,11 +188,6 @@ if not st.session_state.test_avviato:
         nome = st.text_input("Nome e Cognome", max_chars=100)
         cf = st.text_input("Codice Fiscale (obbligatorio)", max_chars=16)
         azienda = st.text_input("Azienda")
-
-        st.subheader("🧩 Seleziona il modulo di test")
-        elenco_moduli = {v["titolo"]: k for k, v in MODULI.items()}
-        modulo_nome = st.selectbox("Modulo", list(elenco_moduli.keys()))
-        modulo_key = elenco_moduli[modulo_nome]
 
         st.subheader("📨 RIFERIMENTI MAIL")
         mail_partecipante = st.text_input(
@@ -216,42 +210,70 @@ if not st.session_state.test_avviato:
                 st.session_state.email_dest = [email.strip() for email in mail_partecipante.split(",") if email.strip()]
                 if invia_copia_me:
                     st.session_state.email_dest.append("perindleandrini@4step.it")
-                st.session_state.modulo_key = modulo_key
 
 # ------------------------------------------------------------
-# EROGAZIONE TEST
+# EROGAZIONE TEST (TUTTE LE SEZIONI IN SEQUENZA)
 # ------------------------------------------------------------
 if st.session_state.test_avviato:
-    key = st.session_state.modulo_key
-    modulo = MODULI[key]
-    domande = modulo["domande"]
+    # Costruisci una lista piatta di (section_key, index_in_section, domanda)
+    sequenza = []
+    ordine_sezioni = [
+        "GEN_NORM",
+        "SPEC_ERGO",
+        "SPEC_RUMORE",
+        "SPEC_INCENDIO",
+        "SPEC_ELETTRICO",
+        "SPEC_CHIMICO",
+    ]
+    for sk in ordine_sezioni:
+        modulo = MODULI[sk]
+        for i, domanda in enumerate(modulo["domande"]):
+            sequenza.append((sk, i, domanda))
 
     st.markdown("---")
-    st.subheader(f"📋 {modulo['titolo']} – {modulo['num_domande']} domande a risposta multipla")
+    st.subheader("📋 Test unico – tutte le sezioni in sequenza")
 
     risposte_utente = []
     punteggio = 0
 
-    for i, domanda in enumerate(domande):
-        st.markdown(f"**Domanda {i+1}:** {domanda['testo']}")
-        risposta = st.radio("Scegli la risposta:", domanda["opzioni"], key=f"q_{i}")
-        risposte_utente.append(risposta)
+    current_section = None
+    # Render con intestazione di sezione quando cambia la chiave
+    for global_idx, (sk, i, domanda) in enumerate(sequenza, start=1):
+        if sk != current_section:
+            current_section = sk
+            st.markdown("")
+            st.markdown(f"### 🧩 {MODULI[sk]['titolo']}")
+        st.markdown(f"**Domanda {global_idx}:** {domanda['testo']}")
+        risposta = st.radio(
+            "Scegli la risposta:",
+            domanda["opzioni"],
+            key=f"q_{sk}_{i}"
+        )
+        risposte_utente.append((sk, i, risposta))
 
     if st.button("Conferma e correggi il test"):
         st.markdown("---")
         st.subheader("📊 Risultato del test")
 
-        for i, domanda in enumerate(domande):
-            scelta = risposte_utente[i]
+        # Correzione e stampa esiti con intestazioni per sezione
+        punteggio = 0
+        current_section = None
+        n = len(sequenza)
+        for global_idx, (sk, i, risposta_data) in enumerate(risposte_utente, start=1):
+            if sk != current_section:
+                current_section = sk
+                st.markdown("")
+                st.markdown(f"#### 🔹 {MODULI[sk]['titolo']}")
+            domanda = MODULI[sk]["domande"][i]
             corretta = domanda["opzioni"][domanda["risposta_corretta"]]
-            if scelta == corretta:
+            if risposta_data == corretta:
                 punteggio += 1
-                st.success(f"✅ Domanda {i+1}: Corretta")
+                st.success(f"✅ Domanda {global_idx}: Corretta")
             else:
-                st.error(f"❌ Domanda {i+1}: Errata – Risposta corretta: {corretta}")
+                st.error(f"❌ Domanda {global_idx}: Errata – Risposta corretta: {corretta}")
 
-        n = len(domande)
-        soglia = ceil(n * 0.8)  # 80% arrotondato per eccesso
+        from math import ceil
+        soglia = ceil(n * 0.8)  # 80% arrotondato per eccesso sull'intero test
         superato = punteggio >= soglia
         st.markdown(f"### Totale corrette: **{punteggio}/{n}** (Soglia: {soglia})")
         st.success("✅ Test superato!" if superato else "❌ Test NON superato")
@@ -260,15 +282,16 @@ if st.session_state.test_avviato:
         data_ora = dt.now(ZoneInfo("Europe/Rome")).strftime('%Y-%m-%d %H:%M')
         risultato = {
             "Data": data_ora,
-            "Modulo": modulo["titolo"],
             "Nome": st.session_state.nome,
             "Codice Fiscale": st.session_state.cf,
             "Azienda": st.session_state.azienda,
             "Punteggio": punteggio,
             "Esito": "Superato" if superato else "Non superato",
+            "Sezioni": ", ".join([MODULI[k]["titolo"] for k in ordine_sezioni]),
         }
-        for i, r in enumerate(risposte_utente):
-            risultato[f"Domanda_{i+1}"] = r
+        # Risposte dettagliate (prefisso sezione)
+        for global_idx, (sk, i, r) in enumerate(risposte_utente, start=1):
+            risultato[f"Domanda_{global_idx}" ] = r
 
         df = pd.DataFrame([risultato])
         os.makedirs("risultati_formazione", exist_ok=True)
@@ -279,7 +302,6 @@ if st.session_state.test_avviato:
                 df_exist = pd.read_excel(file_path)
                 df_final = pd.concat([df_exist, df], ignore_index=True)
             except Exception:
-                # fallback: se il file è aperto altrove o corrotto, scrivi solo la nuova riga
                 df_final = df
         else:
             df_final = df
@@ -295,34 +317,40 @@ if st.session_state.test_avviato:
             sender = None
             password = None
 
-        corpo = f"""🧾 TEST COMPLETATO – {modulo['titolo']}
+        corpo = """🧾 TEST COMPLETATO – Formazione Lavoratori (test unico)
 
-📛 NOMINATIVO: {st.session_state.nome}
-🆔 Codice Fiscale: {st.session_state.cf}
-🏢 Azienda: {st.session_state.azienda}
-🕒 Data/Ora: {data_ora}
-📈 Punteggio: {punteggio}/{n}
-📌 Esito: {'✅ SUPERATO' if superato else '❌ NON SUPERATO'}
-
-📖 RISPOSTE DETTAGLIATE:
 """
-        for i, domanda in enumerate(domande):
-            testo = domanda["testo"]
-            risposta_data = risposte_utente[i]
+        corpo += (
+            f"📛 NOMINATIVO: {st.session_state.nome}\n"
+            f"🆔 Codice Fiscale: {st.session_state.cf}\n"
+            f"🏢 Azienda: {st.session_state.azienda}\n"
+            f"🕒 Data/Ora: {data_ora}\n"
+            f"📈 Punteggio: {punteggio}/{n}\n"
+            f"📌 Esito: {'✅ SUPERATO' if superato else '❌ NON SUPERATO'}\n\n"
+            f"🧩 Sezioni: {', '.join([MODULI[k]['titolo'] for k in ordine_sezioni])}\n\n"
+            f"📖 RISPOSTE DETTAGLIATE:\n"
+        )
+
+        # Aggiungi dettaglio domanda per domanda con intestazioni sezione
+        current_section = None
+        for global_idx, (sk, i, r) in enumerate(risposte_utente, start=1):
+            if sk != current_section:
+                current_section = sk
+                corpo += f"\n--- {MODULI[sk]['titolo']} ---\n"
+            domanda = MODULI[sk]["domande"][i]
             corretta = domanda["opzioni"][domanda["risposta_corretta"]]
-            esito = "✅ CORRETTA" if risposta_data == corretta else f"❌ ERRATA (Corretto: {corretta})"
-            corpo += f"\nDomanda {i+1}: {testo}\nRisposta: {risposta_data} → {esito}\n"
+            esito = "✅ CORRETTA" if r == corretta else f"❌ ERRATA (Corretto: {corretta})"
+            corpo += f"Domanda {global_idx}: {domanda['testo']}\nRisposta: {r} → {esito}\n\n"
 
         if sender and password and st.session_state.email_dest:
             for destinatario in st.session_state.email_dest:
                 msg = MIMEMultipart()
-                msg["Subject"] = f"📩 Test Formazione – {modulo['titolo']} – {st.session_state.nome}"
+                msg["Subject"] = f"📩 Test Formazione – Test unico – {st.session_state.nome}"
                 msg["From"] = sender
                 msg["To"] = destinatario
 
                 msg.attach(MIMEText(corpo, "plain"))
 
-                # Allegato Excel cumulativo
                 try:
                     with open(file_path, "rb") as f:
                         excel = MIMEApplication(f.read(), _subtype="xlsx")
