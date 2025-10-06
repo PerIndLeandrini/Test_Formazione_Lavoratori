@@ -131,7 +131,7 @@ MODULI = {
             {
                 "testo": "Quale estintore si usa su apparecchiature elettriche?",
                 "opzioni": ["Acqua", "CO2 o polvere idonea", "Schiuma sempre"],
-                "risposta_correta": 1,
+                "risposta_corretta": 1,
             },
             {
                 "testo": "Chi coordina le emergenze in azienda?",
@@ -396,3 +396,4 @@ if st.session_state.test_avviato:
                     st.warning(f"❌ Errore nell'invio email a {destinatario}: {e}")
         else:
             st.info("✉️ Email non inviata: configura le credenziali in .streamlit/secrets.toml.")
+
