@@ -4,3 +4,4 @@ openpyxl
 fpdf
 pillow
 matplotlib
+reportlab==4.*
