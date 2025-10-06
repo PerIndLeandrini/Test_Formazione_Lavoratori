@@ -131,7 +131,7 @@ MODULI = {
             {
                 "testo": "Quale estintore si usa su apparecchiature elettriche?",
                 "opzioni": ["Acqua", "CO2 o polvere idonea", "Schiuma sempre"],
-                "risposta_corretta": 1,
+                "risposta_correta": 1,
             },
             {
                 "testo": "Chi coordina le emergenze in azienda?",
@@ -177,7 +177,7 @@ MODULI = {
             },
             {
                 "testo": "In caso di contatto cutaneo con un prodotto corrosivo:",
-                "opzioni": ["Attendere che passi", "Risciacquare abbondantemente e consultare la SDS/medico", "Coprirlo con guanti"],
+                "opzioni": ["Attendere che passi", "Risciacquare abbondantemente e consultare la SDS/medico", "Coprire con guanti"],
                 "risposta_corretta": 1,
             },
         ],
@@ -207,25 +207,16 @@ if not st.session_state.test_avviato:
                 st.session_state.nome = nome
                 st.session_state.cf = cf.upper()
                 st.session_state.azienda = azienda
+                # invio solo all'organizzatore
                 st.session_state.email_dest = ["perindleandrini@4step.it"]
-
-                if invia_copia_me:
-                    st.session_state.email_dest.append("perindleandrini@4step.it")
 
 # ------------------------------------------------------------
 # EROGAZIONE TEST (TUTTE LE SEZIONI IN SEQUENZA)
 # ------------------------------------------------------------
 if st.session_state.test_avviato:
-    # Costruisci una lista piatta di (section_key, index_in_section, domanda)
+    # Lista piatta di (section_key, index_in_section, domanda)
     sequenza = []
-    ordine_sezioni = [
-        "GEN_NORM",
-        "SPEC_ERGO",
-        "SPEC_RUMORE",
-        "SPEC_INCENDIO",
-        "SPEC_ELETTRICO",
-        "SPEC_CHIMICO",
-    ]
+    ordine_sezioni = ["GEN_NORM", "SPEC_ERGO", "SPEC_RUMORE", "SPEC_INCENDIO", "SPEC_ELETTRICO", "SPEC_CHIMICO"]
     for sk in ordine_sezioni:
         modulo = MODULI[sk]
         for i, domanda in enumerate(modulo["domande"]):
@@ -238,25 +229,19 @@ if st.session_state.test_avviato:
     punteggio = 0
 
     current_section = None
-    # Render con intestazione di sezione quando cambia la chiave
     for global_idx, (sk, i, domanda) in enumerate(sequenza, start=1):
         if sk != current_section:
             current_section = sk
             st.markdown("")
             st.markdown(f"### 🧩 {MODULI[sk]['titolo']}")
         st.markdown(f"**Domanda {global_idx}:** {domanda['testo']}")
-        risposta = st.radio(
-            "Scegli la risposta:",
-            domanda["opzioni"],
-            key=f"q_{sk}_{i}"
-        )
+        risposta = st.radio("Scegli la risposta:", domanda["opzioni"], key=f"q_{sk}_{i}")
         risposte_utente.append((sk, i, risposta))
 
     if st.button("Conferma e correggi il test"):
         st.markdown("---")
         st.subheader("📊 Risultato del test")
 
-        # Correzione e stampa esiti con intestazioni per sezione
         punteggio = 0
         current_section = None
         n = len(sequenza)
@@ -273,13 +258,12 @@ if st.session_state.test_avviato:
             else:
                 st.error(f"❌ Domanda {global_idx}: Errata – Risposta corretta: {corretta}")
 
-        from math import ceil
         soglia = ceil(n * 0.8)  # 80% arrotondato per eccesso sull'intero test
         superato = punteggio >= soglia
         st.markdown(f"### Totale corrette: **{punteggio}/{n}** (Soglia: {soglia})")
         st.success("✅ Test superato!" if superato else "❌ Test NON superato")
 
-        # Salvataggio risultato in Excel (una riga per partecipante/test)
+        # Salvataggio risultato
         data_ora = dt.now(ZoneInfo("Europe/Rome")).strftime('%Y-%m-%d %H:%M')
         risultato = {
             "Data": data_ora,
@@ -290,13 +274,12 @@ if st.session_state.test_avviato:
             "Esito": "Superato" if superato else "Non superato",
             "Sezioni": ", ".join([MODULI[k]["titolo"] for k in ordine_sezioni]),
         }
-        # Risposte dettagliate (prefisso sezione)
         for global_idx, (sk, i, r) in enumerate(risposte_utente, start=1):
-            risultato[f"Domanda_{global_idx}" ] = r
+            risultato[f"Domanda_{global_idx}"] = r
 
-        df = pd.DataFrame([risultato])
         os.makedirs("risultati_formazione", exist_ok=True)
         file_path = "risultati_formazione/risultati_test.xlsx"
+        df = pd.DataFrame([risultato])
 
         if os.path.exists(file_path):
             try:
@@ -355,7 +338,7 @@ if st.session_state.test_avviato:
             mime="application/pdf",
         )
 
-        # Email con riepilogo (allega l'Excel cumulativo)
+        # Email con riepilogo (allega l'Excel cumulativo) – invio SOLO all'organizzatore
         try:
             sender = st.secrets["email"]["sender"]
             password = st.secrets["email"]["password"]
@@ -363,48 +346,32 @@ if st.session_state.test_avviato:
             sender = None
             password = None
 
-        corpo = """🧾 TEST COMPLETATO – Formazione Lavoratori (test unico)
+        corpo = f"""🧾 TEST COMPLETATO – Formazione Lavoratori (test unico)
 
+📛 NOMINATIVO: {st.session_state.nome}
+🆔 Codice Fiscale: {st.session_state.cf}
+🏢 Azienda: {st.session_state.azienda}
+🕒 Data/Ora: {data_ora}
+📈 Punteggio: {punteggio}/{n}
+📌 Esito: {'✅ SUPERATO' if superato else '❌ NON SUPERATO'}
+
+🧩 Sezioni: {', '.join([MODULI[k]['titolo'] for k in ordine_sezioni])}
+
+📖 RISPOSTE DETTAGLIATE:
 """
-        corpo += (
-            f"📛 NOMINATIVO: {st.session_state.nome}
-"
-            f"🆔 Codice Fiscale: {st.session_state.cf}
-"
-            f"🏢 Azienda: {st.session_state.azienda}
-"
-            f"🕒 Data/Ora: {data_ora}
-"
-            f"📈 Punteggio: {punteggio}/{n}
-"
-            f"📌 Esito: {'✅ SUPERATO' if superato else '❌ NON SUPERATO'}
 
-"
-            f"🧩 Sezioni: {', '.join([MODULI[k]['titolo'] for k in ordine_sezioni])}
-
-"
-            f"📖 RISPOSTE DETTAGLIATE:
-"
-        )
-
-        # Aggiungi dettaglio domanda per domanda con intestazioni sezione
         current_section = None
         for global_idx, (sk, i, r) in enumerate(risposte_utente, start=1):
             if sk != current_section:
                 current_section = sk
-                corpo += f"
---- {MODULI[sk]['titolo']} ---
-"
+                corpo += f"\n--- {MODULI[sk]['titolo']} ---\n"
             domanda = MODULI[sk]["domande"][i]
             corretta = domanda["opzioni"][domanda["risposta_corretta"]]
             esito = "✅ CORRETTA" if r == corretta else f"❌ ERRATA (Corretto: {corretta})"
-            corpo += f"Domanda {global_idx}: {domanda['testo']}
-Risposta: {r} → {esito}
+            corpo += f"Domanda {global_idx}: {domanda['testo']}\nRisposta: {r} → {esito}\n\n"
 
-"
-
-        if sender and password and st.session_state.email_dest:
-            for destinatario in st.session_state.email_dest:
+        if sender and password:
+            for destinatario in ["perindleandrini@4step.it"]:
                 msg = MIMEMultipart()
                 msg["Subject"] = f"📩 Test Formazione – Test unico – {st.session_state.nome}"
                 msg["From"] = sender
@@ -428,4 +395,4 @@ Risposta: {r} → {esito}
                 except Exception as e:
                     st.warning(f"❌ Errore nell'invio email a {destinatario}: {e}")
         else:
-            st.info("✉️ Email non inviata: configura le credenziali in .streamlit/secrets.toml o nessun destinatario.")
+            st.info("✉️ Email non inviata: configura le credenziali in .streamlit/secrets.toml.")
