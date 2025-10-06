@@ -13,6 +13,9 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.units import mm
+
 
 # ------------------------------------------------------------
 # CONFIGURAZIONE BASE
@@ -294,37 +297,88 @@ if st.session_state.test_avviato:
         st.info("📁 Risultati salvati in `risultati_formazione/risultati_test.xlsx`.")
 
         # --- PDF individuale scaricabile ---
+        
         def build_pdf_buffer():
             buf = BytesIO()
-            doc = SimpleDocTemplate(buf, pagesize=A4)
+
+            # A4 orizzontale + margini
+            left = right = 12 * mm
+            top = bottom = 12 * mm
+            doc = SimpleDocTemplate(
+                buf,
+                pagesize=landscape(A4),
+                leftMargin=left,
+                rightMargin=right,
+                topMargin=top,
+                bottomMargin=bottom,
+            )
+
             styles = getSampleStyleSheet()
+            small = styles['BodyText']; small.fontSize = 8; small.leading = 10
+            meta_style = styles['BodyText']; meta_style.fontSize = 9; meta_style.leading = 11
+
             story = []
             story.append(Paragraph("Test Formazione Lavoratori – Esito", styles['Title']))
-            meta = (
+
+            meta_html = (
                 f"<b>Nome:</b> {st.session_state.nome}<br/>"
                 f"<b>Codice Fiscale:</b> {st.session_state.cf}<br/>"
                 f"<b>Azienda:</b> {st.session_state.azienda}<br/>"
-                f"<b>Data/Ora:</b> {data_ora}<br/>"
+                f"<b>Data/Ora:</b> {dt.now(ZoneInfo('Europe/Rome')).strftime('%Y-%m-%d %H:%M')}<br/>"
                 f"<b>Punteggio:</b> {punteggio}/{n} – <b>Esito:</b> {'SUPERATO' if superato else 'NON SUPERATO'}"
             )
-            story.append(Paragraph(meta, styles['Normal']))
-            story.append(Spacer(1, 10))
+            story.append(Paragraph(meta_html, meta_style))
+            story.append(Spacer(1, 6))
 
-            rows = [["#", "Sezione", "Domanda", "Tua risposta", "Corretta", "Esito"]]
+            # Larghezze colonne per landscape: somma ≈ 255 mm (resta dentro i margini)
+            col_widths = [
+                8 * mm,    # #
+                42 * mm,   # Sezione
+                105 * mm,  # Domanda
+                40 * mm,   # Tua risposta
+                40 * mm,   # Corretta
+                20 * mm,   # Esito
+            ]
+
+            # Intestazione
+            rows = [[
+                Paragraph("#", small),
+                Paragraph("Sezione", small),
+                Paragraph("Domanda", small),
+                Paragraph("Tua risposta", small),
+                Paragraph("Corretta", small),
+                Paragraph("Esito", small),
+            ]]
+
+            # Righe (Paragraph = wrapping automatico)
             for idx, (sk, i, r) in enumerate(risposte_utente, start=1):
                 domanda = MODULI[sk]["domande"][i]
-                corretta = domanda["opzioni"][domanda["risposta_corretta"]]
+                corretta = domanda["opzioni"][domanda.get("risposta_corretta", 0)]
                 esito = "OK" if r == corretta else "ERR"
-                rows.append([str(idx), MODULI[sk]['titolo'], domanda['testo'], r, corretta, esito])
+                rows.append([
+                    Paragraph(str(idx), small),
+                    Paragraph(MODULI[sk]['titolo'], small),
+                    Paragraph(domanda['testo'], small),
+                    Paragraph(str(r), small),
+                    Paragraph(str(corretta), small),
+                    Paragraph(esito, small),
+                ])
 
-            table = Table(rows, repeatRows=1)
+            table = Table(rows, colWidths=col_widths, repeatRows=1)
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
                 ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+                ('FONTSIZE', (0,0), (-1,0), 9),
+                ('ALIGN', (0,0), (0,-1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+                ('LEFTPADDING', (0,0), (-1,-1), 3),
+                ('RIGHTPADDING', (0,0), (-1,-1), 3),
+                ('TOPPADDING', (0,0), (-1,-1), 2),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 2),
             ]))
             story.append(table)
+
             doc.build(story)
             buf.seek(0)
             return buf
@@ -396,4 +450,5 @@ if st.session_state.test_avviato:
                     st.warning(f"❌ Errore nell'invio email a {destinatario}: {e}")
         else:
             st.info("✉️ Email non inviata: configura le credenziali in .streamlit/secrets.toml.")
+
 
