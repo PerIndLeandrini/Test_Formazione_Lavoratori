@@ -8,6 +8,11 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
 # ------------------------------------------------------------
 # CONFIGURAZIONE BASE
@@ -189,25 +194,23 @@ if not st.session_state.test_avviato:
         cf = st.text_input("Codice Fiscale (obbligatorio)", max_chars=16)
         azienda = st.text_input("Azienda")
 
-        st.subheader("📨 RIFERIMENTI MAIL")
-        mail_partecipante = st.text_input(
-            "📧 Email a cui inviare il report (può essere multipla, separata da virgole)",
-            placeholder="es. mario.rossi@email.com, rspp@azienda.it",
-        )
-        
+        st.caption("Il report verrà archiviato internamente e inviato automaticamente all'organizzatore.")
+
         accetto = st.checkbox("✅ Dichiaro di accettare il trattamento dei dati ai fini formativi (privacy)")
         avvia = st.form_submit_button("Inizia il test")
 
         if avvia:
-            if not (nome and cf and azienda and accetto and mail_partecipante):
+            if not (nome and cf and azienda and accetto):
                 st.error("Compila tutti i campi richiesti e accetta la privacy.")
             else:
                 st.session_state.test_avviato = True
                 st.session_state.nome = nome
                 st.session_state.cf = cf.upper()
                 st.session_state.azienda = azienda
-                st.session_state.email_dest = [email.strip() for email in mail_partecipante.split(",") if email.strip()]
-                st.session_state.email_dest.append("perindleandrini@4step.it")
+                st.session_state.email_dest = ["perindleandrini@4step.it"]
+
+                if invia_copia_me:
+                    st.session_state.email_dest.append("perindleandrini@4step.it")
 
 # ------------------------------------------------------------
 # EROGAZIONE TEST (TUTTE LE SEZIONI IN SEQUENZA)
@@ -307,6 +310,51 @@ if st.session_state.test_avviato:
         df_final.to_excel(file_path, index=False)
         st.info("📁 Risultati salvati in `risultati_formazione/risultati_test.xlsx`.")
 
+        # --- PDF individuale scaricabile ---
+        def build_pdf_buffer():
+            buf = BytesIO()
+            doc = SimpleDocTemplate(buf, pagesize=A4)
+            styles = getSampleStyleSheet()
+            story = []
+            story.append(Paragraph("Test Formazione Lavoratori – Esito", styles['Title']))
+            meta = (
+                f"<b>Nome:</b> {st.session_state.nome}<br/>"
+                f"<b>Codice Fiscale:</b> {st.session_state.cf}<br/>"
+                f"<b>Azienda:</b> {st.session_state.azienda}<br/>"
+                f"<b>Data/Ora:</b> {data_ora}<br/>"
+                f"<b>Punteggio:</b> {punteggio}/{n} – <b>Esito:</b> {'SUPERATO' if superato else 'NON SUPERATO'}"
+            )
+            story.append(Paragraph(meta, styles['Normal']))
+            story.append(Spacer(1, 10))
+
+            rows = [["#", "Sezione", "Domanda", "Tua risposta", "Corretta", "Esito"]]
+            for idx, (sk, i, r) in enumerate(risposte_utente, start=1):
+                domanda = MODULI[sk]["domande"][i]
+                corretta = domanda["opzioni"][domanda["risposta_corretta"]]
+                esito = "OK" if r == corretta else "ERR"
+                rows.append([str(idx), MODULI[sk]['titolo'], domanda['testo'], r, corretta, esito])
+
+            table = Table(rows, repeatRows=1)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ]))
+            story.append(table)
+            doc.build(story)
+            buf.seek(0)
+            return buf
+
+        pdf_buffer = build_pdf_buffer()
+        filename_pdf = f"Esito_Test_{st.session_state.cf}_{dt.now(ZoneInfo('Europe/Rome')).strftime('%Y%m%d_%H%M')}.pdf"
+        st.download_button(
+            label="📥 Scarica PDF con correzione",
+            data=pdf_buffer,
+            file_name=filename_pdf,
+            mime="application/pdf",
+        )
+
         # Email con riepilogo (allega l'Excel cumulativo)
         try:
             sender = st.secrets["email"]["sender"]
@@ -319,14 +367,24 @@ if st.session_state.test_avviato:
 
 """
         corpo += (
-            f"📛 NOMINATIVO: {st.session_state.nome}\n"
-            f"🆔 Codice Fiscale: {st.session_state.cf}\n"
-            f"🏢 Azienda: {st.session_state.azienda}\n"
-            f"🕒 Data/Ora: {data_ora}\n"
-            f"📈 Punteggio: {punteggio}/{n}\n"
-            f"📌 Esito: {'✅ SUPERATO' if superato else '❌ NON SUPERATO'}\n\n"
-            f"🧩 Sezioni: {', '.join([MODULI[k]['titolo'] for k in ordine_sezioni])}\n\n"
-            f"📖 RISPOSTE DETTAGLIATE:\n"
+            f"📛 NOMINATIVO: {st.session_state.nome}
+"
+            f"🆔 Codice Fiscale: {st.session_state.cf}
+"
+            f"🏢 Azienda: {st.session_state.azienda}
+"
+            f"🕒 Data/Ora: {data_ora}
+"
+            f"📈 Punteggio: {punteggio}/{n}
+"
+            f"📌 Esito: {'✅ SUPERATO' if superato else '❌ NON SUPERATO'}
+
+"
+            f"🧩 Sezioni: {', '.join([MODULI[k]['titolo'] for k in ordine_sezioni])}
+
+"
+            f"📖 RISPOSTE DETTAGLIATE:
+"
         )
 
         # Aggiungi dettaglio domanda per domanda con intestazioni sezione
@@ -334,11 +392,16 @@ if st.session_state.test_avviato:
         for global_idx, (sk, i, r) in enumerate(risposte_utente, start=1):
             if sk != current_section:
                 current_section = sk
-                corpo += f"\n--- {MODULI[sk]['titolo']} ---\n"
+                corpo += f"
+--- {MODULI[sk]['titolo']} ---
+"
             domanda = MODULI[sk]["domande"][i]
             corretta = domanda["opzioni"][domanda["risposta_corretta"]]
             esito = "✅ CORRETTA" if r == corretta else f"❌ ERRATA (Corretto: {corretta})"
-            corpo += f"Domanda {global_idx}: {domanda['testo']}\nRisposta: {r} → {esito}\n\n"
+            corpo += f"Domanda {global_idx}: {domanda['testo']}
+Risposta: {r} → {esito}
+
+"
 
         if sender and password and st.session_state.email_dest:
             for destinatario in st.session_state.email_dest:
@@ -366,4 +429,3 @@ if st.session_state.test_avviato:
                     st.warning(f"❌ Errore nell'invio email a {destinatario}: {e}")
         else:
             st.info("✉️ Email non inviata: configura le credenziali in .streamlit/secrets.toml o nessun destinatario.")
-
