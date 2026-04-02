@@ -31,7 +31,7 @@ if "test_avviato" not in st.session_state:
 # DOMANDE (SOLO TESTO, SCELTA MULTIPLA) – organizzate per MODULO
 # Le risposte corrette sono indicate dall'indice (0-based) in "risposta_corretta"
 # ------------------------------------------------------------
-MODULI_PREPOSTI = {
+MODULI = {
     "PREPOSTI_GIURIDICO": {
         "titolo": "Formazione preposti – Modulo giuridico normativo",
         "num_domande": 5,
