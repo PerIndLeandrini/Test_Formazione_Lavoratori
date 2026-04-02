@@ -24,11 +24,11 @@ MODULI = {
                 "risposta_corretta": 1,
             },
             {
-                "testo": "La durata minima del corso per preposti, secondo l’Accordo Stato-Regioni 2025, è:",
+                "testo": "Il preposto è tenuto a valutare i rischi aziendali?",
                 "opzioni": [
-                    "6 ore",
-                    "8 ore",
-                    "12 ore"
+                    "Si sempre",
+                    "Si ma solo in ragione di utilizzo di agenti chimici con il Medico competente",
+                    "Si ma inteso come collaborazione nel suo ambito di intervento con RSPP e Datore di lavoro"
                 ],
                 "risposta_corretta": 2,
             },
